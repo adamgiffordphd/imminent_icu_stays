@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 from sklearn.base import BaseEstimator, TransformerMixin
 import numpy as np
+import pandas as pd
 
 class DateTimeTransformer(BaseEstimator, TransformerMixin):
     
@@ -11,11 +12,9 @@ class DateTimeTransformer(BaseEstimator, TransformerMixin):
         return self
     
     def transform(self, X):
-        '''X is a pandas dataframe'''
-        datecols = X[self.datecols].values
-        
+        '''X is a pandas dataframe'''        
         conv_dates = []
-        for col in datecols:
+        for col in self.datecols:
             conv_dates.append(pd.to_datetime(X[col], format='%Y-%m-%d %H:%M:%S', errors='coerce'))
             
         return np.hstack(conv_dates)
