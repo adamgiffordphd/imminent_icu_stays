@@ -1,4 +1,4 @@
-#! /Users/adamgifford/anaconda3/bin/python
+#!/opt/anaconda3/bin/python
 
 import pandas as pd
 import numpy as np
@@ -81,7 +81,7 @@ def get_meta_data(file=None):
         ],
         'durcolnames': ['NOTE_TO_ICU']
     }
-    meta_data['LABVENTS.csv'] = {
+    meta_data['LABEVENTS.csv'] = {
         'row_count': 27854056,
         'colnames': [
             'ROW_ID','SUBJECT_ID','HADM_ID','ITEMID',
@@ -133,6 +133,7 @@ def compute_durations(df,datecoltups,durcolnamesbase,unit='days'):
     dt = DurationTransformer(datecoltups,unit)
     
     durcolnames = [unit.upper() + '_' + base for base in durcolnamesbase]
+    print(datecoltups)
     df[durcolnames] = dt.fit_transform(df)
     return df
 
@@ -223,7 +224,7 @@ def run_all(preprocfile,batchfile,usecols,preproccols,skiprows=0,nrows=100000,se
         raise("nrows must be 'getall' or int ")
         
     num_cores = mp.cpu_count()
-    pool = mp.Pool(num_cores//2)
+    pool = mp.Pool(1)
     
     skiplist = []
     cnt=0
@@ -231,20 +232,21 @@ def run_all(preprocfile,batchfile,usecols,preproccols,skiprows=0,nrows=100000,se
         if skiprows + nrows > row_count:
             nrows = row_count - skiprows
         
-        fargs = (df_ids,batchfile, batch_meta, names, usecols, skiprows,nrows,',',0)
-        pool.apply_async(batch_run,args=fargs,callback=print_result)
-#         skiplist.extend(batch_run(batchfile, batch_meta, names, usecols, skiprows,nrows,sep=',',header=0))
+#         fargs = (df_ids,batchfile, batch_meta, names, usecols, skiprows,nrows,',',0)
+#         pool.apply_async(batch_run,args=fargs,callback=print_result)
+        skiplist.extend(batch_run(df_ids,batchfile, batch_meta, names, usecols, skiprows,nrows,sep=',',header=0))
             
         skiprows += nrows
         cnt += 1
         
-    pool.close()
-    pool.join()
+    return skiplist
+#     pool.close()
+#     pool.join()
 
 if __name__ == "__main__":
     args, kwargs = parse_arguments()
     
-    run_all(*args,**kwargs)
+    skiplist=run_all(*args,**kwargs)
     batchfile = args[1]
     savesuffix = datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S') + '.pkl'
     savefile = PREPROC_DIR + batchfile[:batchfile.index('.')] + '__' + savesuffix
