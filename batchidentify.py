@@ -8,13 +8,14 @@ import datetime
 from argparse import ArgumentParser
 import pickle
 from ediblepickle import checkpoint
+import multiprocessing as mp
+from os import path
 
 FILE_PATH = './data/pickle/preproc/'
 DATA_DIR = 'data/physionet.org/files/mimiciii/1.4/'
 PREPROC_DIR = './data/pickle/preproc/'
-DF_IDS = pd.DataFrame()
 
-CACHE_DIR = './data/pickle/cache'
+CACHE_DIR = './data/pickle/cache/'
 if not os.path.exists(CACHE_DIR):
     os.mkdir(CACHE_DIR)
 
@@ -71,7 +72,7 @@ def get_meta_data(file=None):
         ],
         'durcolnames': ['CHART_TO_ICU']
     }
-    meta_data['NOTEVENTS.csv'] = {
+    meta_data['NOTEEVENTS.csv'] = {
         'row_count': 2083181,
         'colnames': [
             'ROW_ID','SUBJECT_ID','HADM_ID','CHARTDATE',
@@ -114,15 +115,6 @@ def load_preproc_df(filename,colnames):
     df = pd.read_pickle(FILE_PATH + filename)
     return df[colnames]
 
-def checkpoint_name(args, kwargs):
-    ix = args[0].index('.')
-    
-    # make it so start:end is inclusive, inclusive for easy viewing
-    start = str(kwargs[0])
-    end = str(kwargs[0]+kwargs[1]-1)
-    
-    return args[:ix] + '_rows_' + start + '_to_' + end + '.p'
-
 def batch_read_df(filename, names, usecols='all', skiprows=0,
                   nrows=100000,sep=',',header=0):
     if usecols=='all':
@@ -144,15 +136,24 @@ def compute_durations(df,datecoltups,durcolnamesbase,unit='days'):
     df[durcolnames] = dt.fit_transform(df)
     return df
 
-def name_fun(args,kwargs):
-    ix = args[0].index('.')
-    start = str(args[4])
-    end = str(args[5])
+def name_fun(batchfile,skiprows,nrows):
+    ix = batchfile.index('.')
+    start = str(skiprows)
+    end = str(skiprows+nrows)
     
-    return 'file-' + args[0][:ix] + '-lines' + start + '-' + end + '.p'
+    name = 'file-' + batchfile[:ix] + '-lines-' + start + '-' + end + '.p'
+    return name
+
+def load_cache(filename):
+    return pickle.load(open(filename, 'rb'))
     
-@checkpoint(key=name_fun, work_dir=CACHE_DIR)
-def batch_run(batchfile, batch_meta, names, usecols, skiprows,nrows,sep=',',header=0):
+# @checkpoint(key=name_fun, work_dir=CACHE_DIR)
+def batch_run(df_ids,batchfile, batch_meta, names, usecols, skiprows,nrows,sep=',',header=0):
+    filename = name_fun(batchfile,skiprows,nrows)
+    savefile = CACHE_DIR + filename
+    if path.exists(savefile):
+        return load_cache(savefile)
+    
     skiplist=[]
     df_batch = batch_read_df(batchfile, names, usecols, skiprows,
                   nrows,sep=',',header=0)
@@ -163,13 +164,14 @@ def batch_run(batchfile, batch_meta, names, usecols, skiprows,nrows,sep=',',head
     df_batch = convert_dates(df_batch,datetime_cols)
 
     # add to skiplist rows of df that don't have matching ['SUBJECT_ID', 'HADM_ID'] in df_ids
-    toskip = list(pd.merge(df_batch, DF_IDS, on=['SUBJECT_ID', 'HADM_ID'], how="outer", indicator=True
-          ).query('_merge=="left_only"').index)
+    nomatch_df = pd.merge(df_batch, df_ids, on=['SUBJECT_ID', 'HADM_ID'], how="outer", indicator=True
+              ).query('_merge=="left_only"')
+    toskip = nomatch_df['ROW_ID'].to_list()
     if toskip:
         skiplist.extend(toskip)
 
     # now merge so we can calculate when notes were taken in relation to icu admittance
-    df_batch = df_batch.merge(DF_IDS,how='inner',left_on=['SUBJECT_ID', 'HADM_ID'],right_on=['SUBJECT_ID', 'HADM_ID'])
+    df_batch = df_batch.merge(df_ids,how='inner',left_on=['SUBJECT_ID', 'HADM_ID'],right_on=['SUBJECT_ID', 'HADM_ID'])
 
     if 'PRESCRIPTIONS' in batchfile:
         datecoltups = [('INTIME', 'STARTDATE')]
@@ -190,17 +192,26 @@ def batch_run(batchfile, batch_meta, names, usecols, skiprows,nrows,sep=',',head
 
     dur_cols = [col for col in df_batch.columns if any([True for dcol in batch_meta['durcolnames'] if dcol in col])]
     mask = (df_batch[dur_cols] < val).all(axis=1)
-    toskip = df_batch[mask].index.tolist()
+    toskip = df_batch.ROW_ID[mask].to_list()
     if toskip:
         skiplist.extend(toskip)
     
     del df_batch
-    return skiplist
-
-def run_all(preprocfile,batchfile,usecols,preproccols,skiprows=0,nrows=100000,sep=',',header=0):
-    global DF_IDS
     
-    DF_IDS = load_preproc_df(preprocfile,preproccols)
+    pickle.dump((skiprows//nrows,skiplist), open(savefile, 'wb'))
+    return skiprows//nrows, skiplist
+
+skiplist = []
+def print_result(result):
+    # This is called whenever foo_pool(i) returns a result.
+    # result_list is modified only by the main process, not the pool workers.
+    print('Iteration {} complete.'.format(result[0]))
+    skiplist.append(result[1])
+    
+def run_all(preprocfile,batchfile,usecols,preproccols,skiprows=0,nrows=100000,sep=',',header=0):
+#     global DF_IDS
+    
+    df_ids = load_preproc_df(preprocfile,preproccols)
     
     batch_meta = get_meta_data(batchfile)
     
@@ -210,6 +221,9 @@ def run_all(preprocfile,batchfile,usecols,preproccols,skiprows=0,nrows=100000,se
         nrows = batch_meta['row_count']
     elif type(nrows) is not int:
         raise("nrows must be 'getall' or int ")
+        
+    num_cores = mp.cpu_count()
+    pool = mp.Pool(num_cores//2)
     
     skiplist = []
     cnt=0
@@ -217,20 +231,21 @@ def run_all(preprocfile,batchfile,usecols,preproccols,skiprows=0,nrows=100000,se
         if skiprows + nrows > row_count:
             nrows = row_count - skiprows
         
-        print('Iteration {}...'.format(cnt))
-            
-        skiplist.extend(batch_run(batchfile, batch_meta, names, usecols, skiprows,nrows,sep=',',header=0))
+        fargs = (df_ids,batchfile, batch_meta, names, usecols, skiprows,nrows,',',0)
+        pool.apply_async(batch_run,args=fargs,callback=print_result)
+#         skiplist.extend(batch_run(batchfile, batch_meta, names, usecols, skiprows,nrows,sep=',',header=0))
             
         skiprows += nrows
         cnt += 1
-    
-    return skiplist
+        
+    pool.close()
+    pool.join()
 
 if __name__ == "__main__":
     args, kwargs = parse_arguments()
     
-    skiplist = run_all(*args,**kwargs)
-    
+    run_all(*args,**kwargs)
+    batchfile = args[1]
     savesuffix = datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S') + '.pkl'
-    safefile = PREPROC_DIR + batchfile[:batchfile.index('.')] + '__' + savesuffix
-    pickle.dump(skiplist, open(safefile, 'wb'))
+    savefile = PREPROC_DIR + batchfile[:batchfile.index('.')] + '__' + savesuffix
+    pickle.dump(skiplist, open(savefile, 'wb'))
