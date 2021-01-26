@@ -108,12 +108,19 @@ def get_meta_data(file=None):
     else:
         return meta_data
 
-def load_preproc_df(filename,colnames):
+def load_preproc_df(filename,colnames=None):
     '''colnames should be list to always return dataframe
     rather than series
     '''
-    df = pd.read_pickle(FILE_PATH + filename)
-    return df[colnames]
+    try:
+        df = pd.read_pickle(FILE_PATH + filename)
+    except:
+        df = pd.read_pickle(PREPROC_DIR + filename)
+        
+    if colnames is None:
+        return df
+    else:
+        return df[colnames]
 
 def batch_read_df(filename, names, usecols='all', skiprows=0,
                   nrows=100000,sep=',',header=0):
@@ -136,12 +143,12 @@ def compute_durations(df,datecoltups,durcolnamesbase,unit='days'):
     df[durcolnames] = dt.fit_transform(df)
     return df
 
-def name_fun(batchfile,skiprows,nrows):
+def name_fun(batchfile,skiprows,nrows,prefix='file'):
     ix = batchfile.index('.')
     start = str(skiprows)
     end = str(skiprows+nrows)
     
-    name = 'file-' + batchfile[:ix] + '-lines-' + start + '-' + end + '.p'
+    name = prefix + '-' + batchfile[:ix] + '-lines-' + start + '-' + end + '.p'
     return name
 
 def load_cache(filename):
@@ -154,7 +161,7 @@ def batch_run(df_ids,batchfile, batch_meta, names, usecols, skiprows,nrows,sep='
     if path.exists(savefile):
         return load_cache(savefile)
     
-    skiplist=[]
+    batchskip = []
     df_batch = batch_read_df(batchfile, names, usecols, skiprows,
                   nrows,sep=',',header=0)
         
@@ -168,7 +175,7 @@ def batch_run(df_ids,batchfile, batch_meta, names, usecols, skiprows,nrows,sep='
               ).query('_merge=="left_only"')
     toskip = nomatch_df['ROW_ID'].to_list()
     if toskip:
-        skiplist.extend(toskip)
+        batchskip.extend(toskip)
 
     # now merge so we can calculate when notes were taken in relation to icu admittance
     df_batch = df_batch.merge(df_ids,how='inner',left_on=['SUBJECT_ID', 'HADM_ID'],right_on=['SUBJECT_ID', 'HADM_ID'])
@@ -194,12 +201,12 @@ def batch_run(df_ids,batchfile, batch_meta, names, usecols, skiprows,nrows,sep='
     mask = (df_batch[dur_cols] < val).all(axis=1)
     toskip = df_batch.ROW_ID[mask].to_list()
     if toskip:
-        skiplist.extend(toskip)
+        batchskip.extend(toskip)
     
     del df_batch
     
-    pickle.dump((skiprows//nrows,skiplist), open(savefile, 'wb'))
-    return skiprows//nrows, skiplist
+    pickle.dump((skiprows//nrows,batchskip), open(savefile, 'wb'))
+    return skiprows//nrows, batchskip
 
 skiplist = []
 def print_result(result):
@@ -217,15 +224,10 @@ def run_all(preprocfile,batchfile,usecols,preproccols,skiprows=0,nrows=100000,se
     
     names = batch_meta['colnames']
     row_count = batch_meta['row_count']
-    if nrows=='getall': # else must be int
-        nrows = batch_meta['row_count']
-    elif type(nrows) is not int:
-        raise("nrows must be 'getall' or int ")
         
     num_cores = mp.cpu_count()
     pool = mp.Pool(num_cores//2)
     
-    skiplist = []
     cnt=0
     while skiprows<row_count:
         if skiprows + nrows > row_count:

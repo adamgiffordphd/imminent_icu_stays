@@ -7,7 +7,13 @@ from nltk.corpus import stopwords
 from nltk import word_tokenize
 
 stopWords = stopwords.words('english')
-stopWords.extend(['a','b','c','d','e','f','g','h','i','j','k','l','m','n','o','p','q','r','s','t','u','v','w','x','y','z'])
+stopWords.extend(['a','b','c','d','e','f','g','h','i','j','k','l','m',
+                  'n','o','p','q','r','s','t','u','v','w','x','y','z'])
+stopWords.extend(['the','and','to','of','was','with','a','on','in','for',
+'name','is','patient','s','he','at','as','or','one','she','his','her','am',
+'were','you','pt','pm','by','be','had','your','this','date','from','there',
+'an','that','p','are','have','has','h','but','o','namepattern','which','every',
+'also'])
 stopWords = set(stopWords)
 
 class DateTimeTransformer(BaseEstimator, TransformerMixin):
@@ -20,31 +26,31 @@ class DateTimeTransformer(BaseEstimator, TransformerMixin):
     
     def transform(self, X):
         '''X is a pandas dataframe'''        
-        conv_dates = []
         for col in self.datecols:
-            conv_dates.append(pd.to_datetime(X[col], format='%Y-%m-%d %H:%M:%S', errors='coerce'))
-            
-        return np.hstack(conv_dates)
+            X[col] = pd.to_datetime(X[col], format='%Y-%m-%d %H:%M:%S',
+                                             errors='coerce')
 
+        return X
 
 class DurationTransformer(BaseEstimator, TransformerMixin):
     
-    def __init__(self, datetups,unit='days'):
+    def __init__(self, datetups, newcols, unit='days'):
         self.datetups = datetups
-        if unit in 'seconds':
+        self.newcols = newcols
+        if 'second' in unit:
             self.divisor = 1
-        elif unit in 'minutes':
+        elif 'minute' in unit:
             self.divisor = 60
-        elif unit in 'hours':
-            self.divisor = 60*2
-        elif unit in 'days':
-            self.divisor = 60*2*24
-        elif unit in 'weeks':
-            self.divisor = 60*2*24*7
-        elif unit in 'months':
-            self.divisor = 60*2*24*30
-        elif unit in 'years':
-            self.divisor = 60*2*24*365
+        elif 'hour' in unit:
+            self.divisor = 60*60
+        elif 'day' in unit:
+            self.divisor = 60*60*24
+        elif 'week' in unit:
+            self.divisor = 60*60*24*7
+        elif 'month' in unit:
+            self.divisor = 60*60*24*30
+        elif 'year' in unit:
+            self.divisor = 60*60*24*365
         else:
             raise('Invalid time unit {}'.format(unit))
             
@@ -55,11 +61,10 @@ class DurationTransformer(BaseEstimator, TransformerMixin):
         '''X is a pandas dataframe.
         Subtraction is tup[0] - tup[1] for tup in self.datetups
         '''        
-        durations = []
-        for tup in self.datetups:
-            durations.append((X[tup[0]] - X[tup[1]]).dt.total_seconds())
+        for tup, col in zip(self.datetups,self.newcols):
+            X[col] = (X[tup[0]] - X[tup[1]]).dt.total_seconds()/self.divisor
             
-        return np.hstack(durations)/self.divisor
+        return X
     
 class ColumnSelectTransformer(BaseEstimator, TransformerMixin):
     
@@ -80,6 +85,72 @@ class ColumnSelectTransformer(BaseEstimator, TransformerMixin):
         else:
             return [[row[col] for col in self.col_names] for row in X]
     
+class EthnicityTransformer(BaseEstimator, TransformerMixin):
+    
+    def __init__(self):
+        self.ethnicites_dict = {
+            'WHITE': 'WHITE',
+            'WHITE - RUSSIAN': 'WHITE',
+            'WHITE - OTHER EUROPEAN': 'WHITE', 
+            'WHITE - EASTERN EUROPEAN': 'WHITE',
+            'WHITE - BRAZILIAN': 'WHITE',
+            'PORTUGUESE': 'WHITE',
+            
+            'BLACK/AFRICAN AMERICAN': 'BLACK',
+            'BLACK/AFRICAN': 'BLACK',
+            'BLACK/HAITIAN': 'BLACK',
+            'BLACK/CAPE VERDEAN': 'BLACK',
+            'UNKNOWN/NOT SPECIFIED': 'UNKNOWN',
+            'PATIENT DECLINED TO ANSWER': 'UNKNOWN',
+            'UNABLE TO OBTAIN': 'UNKNOWN',
+            
+            'ASIAN': 'ASIAN',
+            'ASIAN - CHINESE': 'ASIAN',
+            'ASIAN - VIETNAMESE': 'ASIAN',
+            'ASIAN - CAMBODIAN': 'ASIAN',
+            'ASIAN - FILIPINO': 'ASIAN',
+            'ASIAN - KOREAN': 'ASIAN',
+            'ASIAN - THAI': 'ASIAN',
+            'ASIAN - JAPANESE': 'ASIAN',
+            'ASIAN - OTHER': 'ASIAN',
+            
+            'ASIAN - ASIAN INDIAN': 'INDIAN',
+            
+            'OTHER': 'OTHER',
+            'SOUTH AMERICAN': 'OTHER',
+            'CARIBBEAN ISLAND': 'OTHER',
+
+            'HISPANIC OR LATINO': 'HISPANIC/LATINO',
+            'HISPANIC/LATINO - GUATEMALAN': 'HISPANIC/LATINO',
+            'HISPANIC/LATINO - PUERTO RICAN': 'HISPANIC/LATINO',
+            'HISPANIC/LATINO - DOMINICAN': 'HISPANIC/LATINO',
+            'HISPANIC/LATINO - SALVADORAN': 'HISPANIC/LATINO',
+            'HISPANIC/LATINO - COLOMBIAN': 'HISPANIC/LATINO',
+            'HISPANIC/LATINO - CENTRAL AMERICAN (OTHER)': 'HISPANIC/LATINO',
+            'HISPANIC/LATINO - HONDURAN': 'HISPANIC/LATINO',
+            'HISPANIC/LATINO - CUBAN': 'HISPANIC/LATINO',
+            'HISPANIC/LATINO - MEXICAN': 'HISPANIC/LATINO',
+
+            'MULTI RACE ETHNICITY': 'MULTIRACE',
+            
+            'MIDDLE EASTERN': 'MIDDLE EASTERN',
+            
+            'AMERICAN INDIAN/ALASKA NATIVE': 'AMERICAN NATIVE',
+            'AMERICAN INDIAN/ALASKA NATIVE FEDERALLY RECOGNIZED TRIBE': 'AMERICAN NATIVE',
+            'NATIVE HAWAIIAN OR OTHER PACIFIC ISLANDER': 'AMERICAN NATIVE'
+        }
+    
+    def fit(self, X, y=None):
+        # This transformer doesn't need to learn anything about the data,
+        # so it can just return self without any further processing
+        return self
+    
+    def _transform(self,x):
+        return self.ethnicites_dict[x]
+    
+    def transform(self,X):
+        return [self._transform(x) for x in X]
+            
 class DiagnosisFrameTransformer(BaseEstimator, TransformerMixin):
     
     def __init__(self):
@@ -107,7 +178,7 @@ class DiagnosisFrameTransformer(BaseEstimator, TransformerMixin):
             col = col.replace('\\',' ')
             col = col.replace("'",' ')
             col_list = regex_split.split(col)
-            col_list = [d.strip() for d in col_list]
+            col_list = [d.strip().lower() for d in col_list]
             col_list = self.remove_stopwords(col_list)
 
             col = ' '.join(col_list)
