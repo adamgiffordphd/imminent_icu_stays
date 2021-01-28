@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-from sklearn.base import BaseEstimator, TransformerMixin
+from sklearn.base import BaseEstimator, TransformerMixin, RegressorMixin
 import numpy as np
 import pandas as pd
 import re
@@ -205,3 +205,40 @@ class DiagnosisTokenizerTransformer(BaseEstimator, TransformerMixin):
     
     def transform(self,X):
         return list(map(self._transform, [row for row in X]))
+    
+class EstimatorTransformer(BaseEstimator, TransformerMixin):
+    
+    def __init__(self, estimator):
+        # What needs to be done here?
+        self.estimator = estimator
+    
+    def fit(self, X, y):
+        # Fit the stored estimator.
+        # Question: what should be returned?
+        self.estimator.fit(X,y)
+        return self
+    
+    def transform(self, X):
+        # Use predict on the stored estimator as a "transformation".
+        # Be sure to return a 2-D array.
+        y = self.estimator.predict(X)
+        return [[i] for i in y]
+    
+class LinearNonlinear(BaseEstimator, RegressorMixin):
+    
+    def __init__(self, lin, nonlin):
+        self.lin = lin
+        self.nonlin = nonlin
+        
+    # we define clones of the original models to fit the data in
+    def fit(self,X,y):        
+        self.lin.fit(X,y)
+        y_pred = self.lin.predict(X)
+        resid = y - y_pred
+        self.nonlin.fit(X,resid)
+            
+        return self
+    
+    def predict(self,X):
+        y = self.lin.predict(X) + self.nonlin.predict(X)
+        return [[i] for i in y]
