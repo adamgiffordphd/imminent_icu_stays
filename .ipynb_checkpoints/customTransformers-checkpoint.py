@@ -13,7 +13,8 @@ stopWords.extend(['the','and','to','of','was','with','a','on','in','for',
 'name','is','patient','s','he','at','as','or','one','she','his','her','am',
 'were','you','pt','pm','by','be','had','your','this','date','from','there',
 'an','that','p','are','have','has','h','but','o','namepattern','which','every',
-'also'])
+'also', ',', '.', ';', '/', '!', '@', '#', '$', '%', '^', '&', '*', '(', ')',
+'-', '_', '=', '+', '{', '}', '[', ']', '|',':', '"', "'", '<', '>', '?'])
 stopWords = set(stopWords)
 
 class DateTimeTransformer(BaseEstimator, TransformerMixin):
@@ -172,16 +173,20 @@ class DiagnosisFrameTransformer(BaseEstimator, TransformerMixin):
                 
             col = col.strip()
 
-            regex_split = re.compile(r'[\|/;|,]')
+            regex_split = re.compile(r'[\|/;|,\s]')
             regex_sub1 = re.compile(r"[\|/\.-]+")
-
+#             regex_rem = re.compile(r'[\d]+\b') # looks for, e.g., '01 '
+            regex_rem = re.compile(r'[\d]+[a-zA-Z]*?\b')  # looks for, e.g., '01 ' and, e.g., '1st '
+            
             col = col.replace('\\',' ')
             col = col.replace("'",' ')
+            col = regex_rem.sub('', col)
             col_list = regex_split.split(col)
             col_list = [d.strip().lower() for d in col_list]
             col_list = self.remove_stopwords(col_list)
 
             col = ' '.join(col_list)
+            
             cleaned_col = regex_sub1.sub(' ', col)
             cleaned_x.append(cleaned_col)
 
