@@ -156,7 +156,14 @@ class DiagnosisFrameTransformer(BaseEstimator, TransformerMixin):
     
     def __init__(self):
         self.stopWords = stopWords
-    
+        self.regex_split = re.compile(r'[\|/;|,\s]')
+        self.regex_sub1 = re.compile(r"[\|/\.-]+")
+        self.regex_sub2 = re.compile(r'\s{2,}')
+#             self.regex_rem1 = re.compile(r'[\d]+\b') # looks for, e.g., '01 '
+        self.regex_rem1 = re.compile(r'[\d]+[a-zA-Z]*?\b')  # looks for, e.g., '01 ' and, e.g., '1st '
+        self.regex_rem2 = re.compile(r'[^a-zA-Z\s]+')
+
+
     def fit(self, X, y=None):
         # This transformer doesn't need to learn anything about the data,
         # so it can just return self without any further processing
@@ -172,22 +179,19 @@ class DiagnosisFrameTransformer(BaseEstimator, TransformerMixin):
                 col = ''
                 
             col = col.strip()
-
-            regex_split = re.compile(r'[\|/;|,\s]')
-            regex_sub1 = re.compile(r"[\|/\.-]+")
-#             regex_rem = re.compile(r'[\d]+\b') # looks for, e.g., '01 '
-            regex_rem = re.compile(r'[\d]+[a-zA-Z]*?\b')  # looks for, e.g., '01 ' and, e.g., '1st '
             
             col = col.replace('\\',' ')
             col = col.replace("'",' ')
-            col = regex_rem.sub('', col)
-            col_list = regex_split.split(col)
+            col = self.regex_rem1.sub('', col)
+            col_list = self.regex_split.split(col)
             col_list = [d.strip().lower() for d in col_list]
             col_list = self.remove_stopwords(col_list)
 
             col = ' '.join(col_list)
+            col = self.regex_sub1.sub(' ', col)
+            col = self.regex_rem2.sub('', col)
+            cleaned_col = self.regex_sub2.sub(' ', col)
             
-            cleaned_col = regex_sub1.sub(' ', col)
             cleaned_x.append(cleaned_col)
 
         return cleaned_x
