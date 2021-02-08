@@ -85,7 +85,43 @@ class ColumnSelectTransformer(BaseEstimator, TransformerMixin):
             return np.hstack([X[col].to_numpy().reshape(-1,1) for col in self.col_names])
         else:
             return [[row[col] for col in self.col_names] for row in X]
+
+class ColumnMergeTransformer(BaseEstimator, TransformerMixin):
     
+    def __init__(self, col_names):
+        self.col_names = col_names  # We will need these in transform()
+    
+    def fit(self, X, y=None):
+        # This transformer doesn't need to learn anything about the data,
+        # so it can just return self without any further processing
+        self.new_col = '_'.join([str(col) for col in self.col_names])
+        return self
+    
+    def transform(self, X):
+        # Return an array with the same number of rows as X and one
+        # column for each in self.col_names
+        
+        if type(X)==pd.core.frame.DataFrame:
+            if X[self.col_names[0]].dtype=='float64':
+                X.loc[:,self.new_col] = -X.loc[:,self.col_names[0]]
+            else:
+                X.loc[:,self.new_col] = ''
+                
+            for col in self.col_names:
+                X.loc[:,self.new_col] = X.loc[:,self.new_col] + X.loc[:,col]
+            return X
+        else:
+            if isinstance(X[0][0],str):
+                X_merged = [[''] for row in X]
+            else:
+                X_merged = [[-row[0]] for row in X]
+                
+            X_merged = [[m_row[0] + col] for m_row,row in zip(X_merged,X) for col in row]
+#             for ix,row in enumerate(X):
+#                 for col in row:
+#                     X_merged[ix] += col
+            return X_merged
+        
 class EthnicityTransformer(BaseEstimator, TransformerMixin):
     
     def __init__(self):
