@@ -82,8 +82,12 @@ class ColumnSelectTransformer(BaseEstimator, TransformerMixin):
         # column for each in self.col_names
         
         if type(X)==pd.core.frame.DataFrame:
-            return np.hstack([X[col].to_numpy().reshape(-1,1) for col in self.col_names])
+            return X[self.col_names]
+#             return np.hstack([X[col].to_numpy().reshape(-1,1) for col in self.col_names]).tolist()
         else:
+            if not isinstance(self.col_names,list):
+                self.col_names = list(self.col_names)
+                
             return [[row[col] for col in self.col_names] for row in X]
 
 class ColumnMergeTransformer(BaseEstimator, TransformerMixin):
@@ -189,6 +193,56 @@ class EthnicityTransformer(BaseEstimator, TransformerMixin):
         return [self._transform(x) for x in X]
             
 class DiagnosisFrameTransformer(BaseEstimator, TransformerMixin):
+    
+    def __init__(self, col_names):
+        self.stopWords = stopWords
+        self.regex_split = re.compile(r'[\|/;|,\s]')
+        self.regex_sub1 = re.compile(r"[\|/\.-]+")
+        self.regex_sub2 = re.compile(r'\s{2,}')
+#             self.regex_rem1 = re.compile(r'[\d]+\b') # looks for, e.g., '01 '
+        self.regex_rem1 = re.compile(r'[\d]+[a-zA-Z]*?\b')  # looks for, e.g., '01 ' and, e.g., '1st '
+        self.regex_rem2 = re.compile(r'[^a-zA-Z\s]+')
+        self.col_names = col_names
+
+
+    def fit(self, X, y=None):
+        # This transformer doesn't need to learn anything about the data,
+        # so it can just return self without any further processing
+        return self
+            
+    def remove_stopwords(self,d_list):
+        return [d for d in d_list if d not in self.stopWords]
+    
+    def _transform(self,x):
+        cleaned_x = []
+        for row in x:
+            if pd.isna(row):
+                row = ''
+                
+            row = row.strip()
+            
+            row = row.replace('\\',' ')
+            row = row.replace("'",' ')
+            row = self.regex_rem1.sub('', row)
+            row_list = self.regex_split.split(row)
+            row_list = [d.strip().lower() for d in row_list]
+            row_list = self.remove_stopwords(row_list)
+
+            row = ' '.join(row_list)
+            row = self.regex_sub1.sub(' ', row)
+            row = self.regex_rem2.sub('', row)
+            cleaned_row = self.regex_sub2.sub(' ', row)
+            
+            cleaned_x.append(cleaned_row)
+
+        return cleaned_x
+    
+    def transform(self,X):
+        for col in self.col_names:
+            X[col] = self._transform(X[col])
+        return X
+        
+class DiagnosisArrayTransformer(BaseEstimator, TransformerMixin):
     
     def __init__(self):
         self.stopWords = stopWords
