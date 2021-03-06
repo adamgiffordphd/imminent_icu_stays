@@ -19,7 +19,7 @@ stopWords = set(stopWords)
 
 class DateTimeTransformer(BaseEstimator, TransformerMixin):
     
-    def __init__(self, datecols):
+    def __init__(self, dateus):
         self.datecols = datecols
         
     def fit(self, X, y=None):
